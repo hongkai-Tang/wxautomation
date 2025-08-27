@@ -1,5 +1,3 @@
-基于你之前的 README（已合并并精简要点）如下：&#x20;
-
 ````markdown
 <h1 align="center">wxautomation · WeChat UIA Automation ✨</h1>
 
