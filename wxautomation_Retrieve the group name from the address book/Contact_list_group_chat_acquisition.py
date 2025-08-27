@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 import time
 import ctypes
+import os  # 新增：用于判断备用图片是否存在
 from collections import deque
 from pywinauto import Application, Desktop, keyboard
 from pywinauto.mouse import move as mouse_move  # 只用 move，不用 wheel
 import pyautogui
+import concurrent.futures as futures  # NEW: 并发池
+import pyscreeze  # NEW: 单帧上做模板匹配
 
 # ============== PyAutoGUI 基本设置（防误触&提速） ==============
 pyautogui.FAILSAFE = False
@@ -44,6 +47,16 @@ def normalize_text(s: str) -> str:
     for j in ["\u200b", "\u2006", "\u2009", "\u200a", "\u2005", "\u00a0"]:
         s = s.replace(j, " ")
     return " ".join(s.strip().split())
+
+def normalize_group_name(s: str) -> str:
+    """标准化群名：去除成员数量后缀 (数字)"""
+    if not s:
+        return ""
+    s = normalize_text(s)
+    # 去除末尾的成员数量，如 "群名 (123)" -> "群名"
+    import re
+    s = re.sub(r'\s*\(\d+\)\s*$', '', s).strip()
+    return s
 
 def collect_texts(ctrl):
     parts = []
@@ -195,7 +208,13 @@ def select_row_no_mouse(row, header_rect=None):
 
 # -------------------- UIA：连接窗口 --------------------
 def attach_contact_manager():
-    Application(backend=APP_BACKEND).connect(class_name_re="WeChat.*", timeout=10)
+    try:
+        # 尝试连接，但忽略多窗口错误
+        Application(backend=APP_BACKEND).connect(class_name_re="WeChat.*", timeout=10)
+    except Exception as e:
+        print(f"⚠️ 连接WeChat应用时出现警告: {e}")
+        # 继续执行，因为可能已经有连接了
+
     # 等待“通讯录管理”弹出
     for _ in range(40):
         try:
@@ -207,41 +226,183 @@ def attach_contact_manager():
             time.sleep(0.15)
     raise RuntimeError("未能找到【通讯录管理】窗口")
 
-# -------------------- 影像法：点击模板 --------------------
-def click_by_image(template_path, confidence=0.8, timeout=6.0, interval=0.25, grayscale=True):
+# -------------------- 影像法：点击模板（已做异常安全） --------------------
+def click_by_image(template_path, confidence=0.8, timeout=6.0, interval=0.25, grayscale=True, region=None):
     """
     在屏幕上找模板并点击中心点；返回 True/False
-    需要 opencv-python 支持 confidence。
+    - 捕获 ImageNotFoundException/其他异常，匹配不到仅返回 False，不再让程序崩溃
+    - 可选 region 限定搜索区域（默认全屏）
     """
     end = time.time() + timeout
+    last_err = None
+    attempt = 0
+    
+    # 检查模板图片是否存在
+    if not os.path.exists(template_path):
+        print(f"[ERROR] 模板图片不存在: {template_path}")
+        return False
+    
+    print(f"[INFO] 开始搜索模板: {os.path.basename(template_path)} (超时{timeout}秒)")
+    
     while time.time() < end:
-        box = pyautogui.locateOnScreen(template_path, confidence=confidence, grayscale=grayscale)
+        attempt += 1
+        try:
+            # 降低confidence可以提高识别成功率
+            current_confidence = max(0.6, confidence - (attempt * 0.05))
+            
+            box = pyautogui.locateOnScreen(
+                template_path,
+                confidence=current_confidence,
+                grayscale=grayscale,
+                region=region
+            )
+        except Exception as e:
+            last_err = e
+            box = None
+
         if box:
             cx, cy = pyautogui.center(box)
+            print(f"[SUCCESS] 找到模板 {os.path.basename(template_path)} 在 ({cx}, {cy})")
             pyautogui.moveTo(cx, cy, duration=0.05)
             pyautogui.click(cx, cy)
+            time.sleep(0.2)  # 点击后稍等
             return True
+            
+        print(f"[ATTEMPT {attempt}] 未找到模板 {os.path.basename(template_path)} (confidence={current_confidence:.2f})")
         time.sleep(interval)
+
+    if last_err:
+        print(f"[WARN] locateOnScreen('{template_path}') failed: {last_err}")
+    print(f"[TIMEOUT] 模板搜索超时: {os.path.basename(template_path)}")
     return False
 
+# -------------------- 冗余图片匹配小助手（只做你要求的图片冗余匹配） --------------------
+
+# ========== NEW: 并发模板匹配（同一按钮多图） ==========
+def _expand_templates(seed):
+    """
+    将单一路径或路径列表扩展为候选模板列表：
+    - 若传入 str：自动收集同目录下同“前缀”的多张图片，如:
+      contacts_button.png / contacts_button1.png / contacts_button2.png ...
+    - 若传入 list/tuple：按传入顺序使用（仅保留存在的文件）。
+    """
+    import os, re, glob
+    if isinstance(seed, (list, tuple)):
+        return [os.path.abspath(p) for p in seed if os.path.exists(p)]
+    p = os.path.abspath(seed)
+    d, fn = os.path.split(p)
+    name, ext = os.path.splitext(fn)
+    prefix = re.sub(r'\d+$', '', name)  # 去掉末尾数字得到前缀
+    cand = sorted(glob.glob(os.path.join(d, f"{prefix}*{ext}")))
+    return [c for c in cand if os.path.exists(c)] or ([p] if os.path.exists(p) else [])
+
+
+def _locate_one_on_haystack(tpl_path, haystack, confidence, grayscale):
+    """在已截图的 haystack(PIL.Image) 上查找单个模板；命中返回 Box，否则 None。"""
+    try:
+        return pyscreeze.locate(tpl_path, haystack, confidence=confidence, grayscale=grayscale)
+    except Exception:
+        return None
+
+
+def _locate_any_concurrent(template_paths, haystack, confidence=0.8, grayscale=True, max_workers=8):
+    """在同一帧截图上并发查找多张模板；先命中者先返回 (box, tpl_path)，都未命中返回 (None, None)。"""
+    if not template_paths:
+        return None, None
+    workers = min(max(1, len(template_paths)), max_workers)
+    with futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        fut2p = {ex.submit(_locate_one_on_haystack, p, haystack, confidence, grayscale): p
+                 for p in template_paths}
+        for fut in futures.as_completed(fut2p):
+            box = fut.result()
+            if box:
+                return box, fut2p[fut]
+    return None, None
+
+
+def click_by_images_fast(template_paths, confidence=0.8, timeout=6.0, interval=0.2, grayscale=True, region=None):
+    """
+    一次截图 → 多模板并发匹配 → 命中即点。支持 region。
+    - template_paths: 可以是 str 或 多个路径的 list/tuple
+    """
+    import time, os
+    tpl_list = _expand_templates(template_paths)
+    if not tpl_list:
+        print(f"[ERROR] 无有效模板: {template_paths}")
+        return False
+
+    print("[FAST] 候选模板：", ", ".join(os.path.basename(p) for p in tpl_list))
+    end = time.time() + timeout
+    attempt = 0
+
+    while time.time() < end:
+        attempt += 1
+        # 单帧截图（避免每个模板各截一次）
+        shot = pyautogui.screenshot(region=region)  # PIL.Image
+        # 逐步放宽阈值（同你现有的退火思路保持一致）
+        curr_conf = max(0.6, confidence - (attempt * 0.05))
+
+        box, which = _locate_any_concurrent(tpl_list, shot, confidence=curr_conf, grayscale=grayscale)
+        if box:
+            # region 偏移修正
+            x_off = region[0] if region else 0
+            y_off = region[1] if region else 0
+            cx, cy = pyscreeze.center(box)
+            cx += x_off; cy += y_off
+
+            print(f"[FAST HIT] {os.path.basename(which)} @ ({cx}, {cy}) [conf~{curr_conf:.2f}]")
+            pyautogui.moveTo(cx, cy, duration=0.05)
+            pyautogui.click(cx, cy)
+            time.sleep(0.2)
+            return True
+
+        print(f"[FAST MISS {attempt}] 无命中（conf={curr_conf:.2f}）")
+        time.sleep(interval)
+
+    print("[FAST TIMEOUT] 并发匹配超时")
+    return False
+# ========== NEW 结束 ==========
+def _pair_paths(path: str):
+    """生成 [path, 备用path]，备用为把文件名末尾的 '1' 去掉/补上后的同名 png；只返回存在的文件。"""
+    d, fn = os.path.split(path)
+    name, ext = os.path.splitext(fn)
+    if name.endswith("1"):
+        alt = os.path.join(d, name[:-1] + ext)
+    else:
+        alt = os.path.join(d, name + "1" + ext)
+    out = []
+    for p in [path, alt]:
+        if p not in out and os.path.exists(p):
+            out.append(p)
+    return out
+
+def try_click_pair(path: str, **kwargs) -> bool:
+    """按顺序尝试 path 与其备用 path（去掉/加上 1），哪个能匹配就用哪个。"""
+    for p in _pair_paths(path):
+        if click_by_image(p, **kwargs):
+            return True
+    return False
+
+# -------------------- 打开通讯录管理：仅加入冗余图片匹配，其余逻辑不变 --------------------
 def open_manager_via_images(img_contacts, img_manager, img_recent):
     """
     1) 点击“通讯录”  2) 点击“通讯录管理” 3) 点击“最近群聊”
-    都用图片模板，找不到会抛错。
+    同一按钮支持多图并发匹配（自动收集同前缀模板），命中即点。
+    “最近群聊”仍保留 UIA 兜底。
     """
-    if not click_by_image(img_contacts, confidence=0.75, timeout=8):
-        raise RuntimeError("未找到【通讯录】按钮图片")
+    if not click_by_images_fast(img_contacts, confidence=0.75, timeout=8):
+        raise RuntimeError("未找到【通讯录】按钮图片（contacts_button1.png / contacts_button.png 均失败）")
     time.sleep(0.6)
 
-    if not click_by_image(img_manager, confidence=0.75, timeout=10):
-        raise RuntimeError("未找到【通讯录管理】按钮图片")
+    if not click_by_images_fast(img_manager, confidence=0.75, timeout=10):
+        raise RuntimeError("未找到【通讯录管理】按钮图片（contacts_manager_button1.png / contacts_manager_button.png 均失败）")
     time.sleep(0.8)
 
     # 等“通讯录管理”窗口出现后再点“最近群聊”
     dlg = attach_contact_manager()
 
-    if not click_by_image(img_recent, confidence=0.75, timeout=8):
-        # 如果图片法没点到，尝试 UIA 兜底找一次“最近群聊”
+    if not click_by_images_fast(img_recent, confidence=0.75, timeout=8):
+        # 如果图片法没点到，尝试 UIA 兜底找一次“最近群聊”（保持你原来的兜底逻辑）
         target = None
         for t in dlg.descendants(control_type="Text"):
             if normalize_text(t.window_text()) == "最近群聊":
@@ -257,7 +418,7 @@ def open_manager_via_images(img_contacts, img_manager, img_recent):
             except Exception:
                 pass
         else:
-            raise RuntimeError("未找到【最近群聊】按钮图片/控件")
+            raise RuntimeError("未找到【最近群聊】按钮图片/控件（groups_button1.png / groups_button.png 均失败）")
 
     time.sleep(0.6)
     return dlg  # 返回通讯录管理窗口
@@ -322,14 +483,17 @@ def iterate_group_names(dlg, skip_names=None, max_groups=None):
                 name = pre_name or normalize_text(collect_texts(row))
                 if not name:
                     name = normalize_text(get_row_label_without_click(row, dlg))
-                if not name or name in skip_names or name in seen:
+
+                # 标准化群名：去除成员数量后缀
+                normalized_name = normalize_group_name(name)
+                if not normalized_name or normalized_name in skip_names or normalized_name in seen:
                     continue
 
-                seen.add(name)
-                names.append(name)
+                seen.add(normalized_name)
+                names.append(normalized_name)
                 count += 1
                 added_in_page += 1
-                print(f"[{count}] {name}")
+                print(f"[{count}] {normalized_name}")
 
                 if max_groups and count >= max_groups:
                     return names
@@ -367,9 +531,10 @@ def iterate_group_names(dlg, skip_names=None, max_groups=None):
 # -------------------- 入口 --------------------
 if __name__ == "__main__":
     # 1) 用图片法完成：通讯录 -> 通讯录管理 -> 最近群聊
-    CONTACTS_IMG = "contacts_button.png"
-    MANAGER_IMG  = "contacts_manager_button.png"
-    RECENT_IMG   = "groups_button.png"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    CONTACTS_IMG = os.path.join(script_dir, "contacts_button1.png")
+    MANAGER_IMG  = os.path.join(script_dir, "contacts_manager_button1.png")
+    RECENT_IMG   = os.path.join(script_dir, "groups_button1.png")
     dlg = open_manager_via_images(CONTACTS_IMG, MANAGER_IMG, RECENT_IMG)
 
     # 2) 采集群名
