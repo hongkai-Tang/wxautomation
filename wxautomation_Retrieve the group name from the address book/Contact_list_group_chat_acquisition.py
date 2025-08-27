@@ -528,20 +528,82 @@ def iterate_group_names(dlg, skip_names=None, max_groups=None):
 
     return names
 
-# -------------------- 入口 --------------------
-if __name__ == "__main__":
-    # 1) 用图片法完成：通讯录 -> 通讯录管理 -> 最近群聊
+# ========== 兼容/安全辅助（最小改动新增） ==========
+def open_contacts_manager_and_switch_to_recent_groups():
+    """
+    为兼容外部调用：打开“通讯录管理”并切换到“最近群聊”，返回 dlg。
+    （内部仍然使用并发模板匹配的 open_manager_via_images，不改变并发逻辑）
+    """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     CONTACTS_IMG = os.path.join(script_dir, "contacts_button1.png")
     MANAGER_IMG  = os.path.join(script_dir, "contacts_manager_button1.png")
     RECENT_IMG   = os.path.join(script_dir, "groups_button1.png")
-    dlg = open_manager_via_images(CONTACTS_IMG, MANAGER_IMG, RECENT_IMG)
+    return open_manager_via_images(CONTACTS_IMG, MANAGER_IMG, RECENT_IMG)
 
-    # 2) 采集群名
+
+def iterate_group_names_subprocess(skip_names=None, max_groups=None, timeout=90):
+    """
+    安全包装：在子进程里执行本模块的 CLI（保持并发匹配），主进程只接收 JSON 列表。
+    不改动 iterate_group_names 的现有实现，也不动并行代码。
+    """
+    import sys, subprocess, json, os
+    module_path = os.path.abspath(__file__)
+    args = [sys.executable, "-X", "faulthandler", module_path, "--json"]
+    if skip_names:
+        try:
+            sn = json.dumps(list(skip_names), ensure_ascii=False)
+            args += ["--skip", sn]
+        except Exception:
+            pass
+    if max_groups:
+        args += ["--max", str(int(max_groups))]
+    try:
+        proc = subprocess.run(args, cwd=os.path.dirname(module_path), capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("最近群聊检测超时")
+    if proc.returncode == 0:
+        out = proc.stdout.strip()
+        try:
+            data = json.loads(out or "[]")
+            if isinstance(data, list):
+                return data
+            raise RuntimeError("子进程输出不是列表")
+        except Exception as e:
+            raise RuntimeError(f"解析子进程输出失败: {e} | 原始输出: {out[:200]}")
+    else:
+        err = proc.stderr.strip() or proc.stdout.strip() or f"returncode={proc.returncode}"
+        raise RuntimeError(f"子进程执行失败：{err}")
+# ========== 辅助新增结束 ==========
+
+# -------------------- 入口 --------------------
+if __name__ == "__main__":
+    import os, json, argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--json", action="store_true", help="以 JSON 列表形式输出群名")
+    parser.add_argument("--skip", type=str, default="", help="额外跳过名称集合（JSON 字符串）")
+    parser.add_argument("--max", type=int, default=0, help="最多采集多少个群名（0=不限制）")
+    args = parser.parse_args()
+
+    # 1) 打开“通讯录管理”并切换到“最近群聊”
+    dlg = open_contacts_manager_and_switch_to_recent_groups()
+
+    # 2) 采集群名（保持你原有并发模板匹配、固定步长滚动等逻辑）
     SKIP = {"全部", "标签", "最近群聊", ""}  # 目录项一律跳过
-    group_names = iterate_group_names(dlg, skip_names=SKIP, max_groups=None)
+    if args.skip:
+        try:
+            extra = json.loads(args.skip)
+            if isinstance(extra, (list, set, tuple)):
+                SKIP |= set(extra)
+        except Exception:
+            pass
 
-    print("\n========== 采集完成 ==========")
-    print(f"共采集到 {len(group_names)} 个群：")
-    for i, g in enumerate(group_names, 1):
-        print(f"{i:>3}. {g}")
+    max_groups = None if args.max <= 0 else args.max
+    group_names = iterate_group_names(dlg, skip_names=SKIP, max_groups=max_groups)
+
+    if args.json:
+        print(json.dumps(group_names, ensure_ascii=False))
+    else:
+        print("\n========== 采集完成 ==========")
+        print(f"共采集到 {len(group_names)} 个群：")
+        for i, g in enumerate(group_names, 1):
+            print(f"{i:>3}. {g}")
