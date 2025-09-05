@@ -84,6 +84,35 @@ wx.AtAll(
 ) -> bool
 ```
 
+### 3) 任务栏唤起并发送（新增）
+
+目录：`send_wechat_message_to_minimized_chat/`  
+脚本：`send_wechat_message_to_minimized_chat.py`
+
+**能力**：当微信所有窗口最小化、或聊天已“独立窗口化”时，先尝试**按窗口标题**直接前置；若不可见，则通过**任务栏 → “任务切换”列表**唤起目标群聊窗口，随后自动**粘贴并发送**文本。已可同时兼容中文/英文系统（`任务栏|Taskbar`、`任务切换程序|Task switching|Task View`、`微信|WeChat`）。
+
+**快速试用**
+```bash
+cd send_wechat_message_to_minimized_chat
+python send_wechat_message_to_minimized_chat.py "测试3群" "今晚八点上新！"
+
+**在你的工程中使用**
+```python
+from send_wechat_message_to_minimized_chat import send_wechat_message_to_minimized_chat
+
+ok = send_wechat_message_to_minimized_chat("测试3群", "Hello from automation!")
+print("OK" if ok else "FAILED")
+```
+**API**
+
+```python
+send_wechat_message_to_minimized_chat(
+    chat_title: str,              # 目标独立聊天窗口标题（群名），如 "测试3群"
+    text: str,                    # 要发送的文本
+    timeout: float = 5.0          # 任务栏“任务切换”兜底路径的等待秒数
+) -> bool                         # 成功唤起并发送返回 True
+
+```
 ---
 
 ## 🧱 目录结构（简）
@@ -95,6 +124,9 @@ wxautomation/
 │  └─ Contact_list_group_chat_acquisition.py
 └─ WeChat_group_@_everyone_function/
    └─ WeChat_group_@_everyone_function.py
+│
+└─ send_wechat_message_to_minimized_chat/
+   └─ send_wechat_message_to_minimized_chat.py
 ```
 
 ---
