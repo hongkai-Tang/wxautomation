@@ -95,7 +95,7 @@ wx.AtAll(
 ```bash
 cd send_wechat_message_to_minimized_chat
 python send_wechat_message_to_minimized_chat.py "测试3群" "今晚八点上新！"
-
+```
 **在你的工程中使用**
 ```python
 from send_wechat_message_to_minimized_chat import send_wechat_message_to_minimized_chat
