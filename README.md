@@ -113,6 +113,49 @@ send_wechat_message_to_minimized_chat(
 ) -> bool                         # 成功唤起并发送返回 True
 
 ```
+### 4) 位置卡片解析（新增）
+
+目录：`location_message_retrieval/`  
+脚本：`location_message_retrieval/location.py`
+
+**能力**：在当前聊天窗口中，定位最近一条**位置卡片**并解析出 **昵称、详细地址、地点/店名**，按顺序返回：
+`[sender, address, title]`。适配**群聊/私聊**两种布局；通过 UIAutomation（pywinauto）获取控件文本，使用更严格的中文地址规则避免把“××路店”这类店名误识为地址。详见源码内 `LocationMessage(chat_title: str) -> Optional[List[str]]`。:contentReference[oaicite:1]{index=1}
+
+**快速试用**
+```bash
+cd location_message_retrieval
+python location.py
+```
+**在你的工程中使用**
+```python
+from location_message_retrieval.location import LocationMessage
+
+print(LocationMessage("XXX"))   # 群聊
+print(LocationMessage("XXX"))     # 私聊
+# 返回形如：['昵称', 'XXX省XXX市……', 'XXXX店']
+```
+**API**
+
+```python
+from typing import Optional, List
+from location_message_retrieval.location import LocationMessage
+
+def LocationMessage(chat_title: str) -> Optional[List[str]]:
+    """
+    参数：
+      chat_title: 聊天窗口标题前缀（群名或联系人名），如 "测试3群" / "左宇科"
+    返回：
+      [sender, address, title, source]
+        - sender : 发送者昵称（群聊为成员昵称，私聊为对方昵称）
+        - address: 详细地址（例如“XX省XX市……”）
+        - title  : 地点/店名（例如“XXX店”）
+        - source : 群聊返回群名称；私聊返回 'private'
+      若未找到“位置卡片”则返回 None
+    """
+
+
+```
+
 ---
 
 ## 🧱 目录结构（简）
@@ -124,9 +167,10 @@ wxautomation/
 │  └─ Contact_list_group_chat_acquisition.py
 └─ WeChat_group_@_everyone_function/
    └─ WeChat_group_@_everyone_function.py
-│
 └─ send_wechat_message_to_minimized_chat/
    └─ send_wechat_message_to_minimized_chat.py
+└─ location_message_retrieval/
+   └─ location.py
 ```
 
 ---
