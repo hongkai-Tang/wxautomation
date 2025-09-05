@@ -227,4 +227,5 @@ if __name__ == "__main__":
     # 示例一：群聊
     print(LocationMessage("测试3群"))
     # 示例二：私聊
-    # print(LocationMessage("左宇科"))
+    # print(LocationMessage(XXX"))
+
