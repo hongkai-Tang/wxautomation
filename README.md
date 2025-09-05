@@ -138,7 +138,7 @@ wxautomation/
 
 ---
 
-## 👥 Contributors
+## 👥 co-worker
 
 <p align="left">
   <a href="https://github.com/1JSK1" title="1JSK1">
