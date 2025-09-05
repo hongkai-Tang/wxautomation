@@ -143,7 +143,7 @@ from location_message_retrieval.location import LocationMessage
 def LocationMessage(chat_title: str) -> Optional[List[str]]:
     """
     参数：
-      chat_title: 聊天窗口标题前缀（群名或联系人名），如 "测试3群" / "左宇科"
+      chat_title: 聊天窗口标题前缀（群名或联系人名），如 "测试3群" / "XXX"
     返回：
       [sender, address, title, source]
         - sender : 发送者昵称（群聊为成员昵称，私聊为对方昵称）
