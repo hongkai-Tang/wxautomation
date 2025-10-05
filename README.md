@@ -155,7 +155,34 @@ def LocationMessage(chat_title: str) -> Optional[List[str]]:
 
 
 ```
+```
+### 5) 指定群聊发布群公告（新增）
 
+目录：`Edit_Group_Announcement_for_the_Specified_Group/`  
+脚本：`Edit_Announcement.py`
+
+**能力** 
+- 在“指定群聊的独立窗口”中，精确点开右上角 **…（聊天信息）**，打开侧边栏后点击 **群公告**。  
+- 进入编辑页后：**Ctrl+A + Backspace** 清空 → 输入新内容 → 在编辑窗**右上角**点击 **完成** → 在弹出的确认框上，**以编辑窗中心为基准向右下偏移**点击 **发布**。  
+- 发布成功后，自动回到该群的独立聊天窗口，在**窗口中心点击一次**，**收起右侧侧边栏**（新功能）。
+
+**细节**  
+- 始终以**顶级父窗口右上角**为锚点定位，不依赖不稳定的层级结构。  
+- 通过群标题括号人数判断“小群/大群”（> **12** 视为大群），在侧边栏中选择更合适的 **群公告** 纵向坐标。  
+- 提供一次性**偏移校准**：把鼠标移到三点按钮上按回车，会保存相对偏移，之后点击更稳。  
+- 不使用 `ESC`（避免把编辑窗口关掉），仅使用 `Ctrl+A + Backspace` 清空内容。
+
+**快速试用**
+```bash
+python Edit_Announcement.py
+```
+**在你的工程中使用**
+```python
+from Edit_Announcement import post_group_announcement
+post_group_announcement("测试1群", "群公告1测试", need_calibration=False)
+# 第一次可设 need_calibration=True 做一次右上角偏移校准
+```
+```
 ---
 
 ## 🧱 目录结构（简）
