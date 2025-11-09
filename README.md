@@ -300,6 +300,8 @@ wxautomation/
 └─ auto_like_moments/
    └─ auto_like_moments.py
    └─ ellipsis_button.png
+└─ publish_moments/
+   └─ publish_moments.py
 ```
 
 ---
