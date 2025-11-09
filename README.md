@@ -204,6 +204,42 @@ if ok:
     print("成功打开朋友圈！")
 ```
 
+**API**
+```python
+open_wechat_moments() -> bool
+```
+
+
+### 7) 朋友圈自动「滚动点赞」
+
+目录：`auto_like_moments/`  
+脚本：`auto_like_moments.py`
+
+**能力** 
+- 使用 pyautogui（图像识别）在当前屏幕查找所有 ... 按钮 (ellipsis_button.png)。  
+- 按从上到下顺序，依次处理本页所有找到的按钮。  
+- “慢动作”执行：为确保稳定，每一步操作（移动、点击）都包含 time.sleep 延迟。
+- 点击 ... 按钮 → 等待 1.5 秒 → 盲点偏移（如“向左 200 像素”）→ 点击“赞”按钮。
+- PageDown 翻页：在处理完当前屏幕上的所有 ... 按钮后，模拟一次 pagedown 按键，确保新的一页全都是新内容，从根本上避免二次点击。
+- 
+
+**快速试用**
+```bash
+python auto_like_moments.py
+```
+**在你的工程中使用**
+```python
+from auto_like_moments import like_moments_by_pagedown
+total = like_moments_by_pagedown(target_like_count=10) # 目标点赞 10 个
+print(f"总共点赞了 {total} 个。")
+```
+**API**
+```python
+like_moments_by_pagedown(target_like_count: int) -> int
+# :param target_like_count: 目标点赞数量
+# :return: int - 实际点赞数量
+```
+
 
 ---
 
@@ -222,6 +258,11 @@ wxautomation/
    └─ location.py
 └─ Edit_Group_Announcement_for_the_Specified_Group/
    └─ Edit_Announcement.py
+├─ open_moments/
+│  └─ open_moments.py
+└─ auto_like_moments/
+   └─ auto_like_moments.py
+   └─ ellipsis_button.png
 ```
 
 ---
