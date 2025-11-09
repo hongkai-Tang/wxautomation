@@ -34,7 +34,7 @@ cd "wxautomation_Retrieve the group name from the address book"
 python Contact_list_group_chat_acquisition.py
 ```
 
-### 2) 群聊“@所有人 / @指定成员”（新增）
+### 2) 群聊“@所有人 / @指定成员”
 
 目录：`WeChat_group_@_everyone_function/`
 脚本：`WeChat_group_@_everyone_function.py`
@@ -84,7 +84,7 @@ wx.AtAll(
 ) -> bool
 ```
 
-### 3) 任务栏唤起并发送（新增）
+### 3) 任务栏唤起并发送
 
 目录：`send_wechat_message_to_minimized_chat/`  
 脚本：`send_wechat_message_to_minimized_chat.py`
@@ -113,7 +113,7 @@ send_wechat_message_to_minimized_chat(
 ) -> bool                         # 成功唤起并发送返回 True
 
 ```
-### 4) 位置卡片解析（新增）
+### 4) 位置卡片解析
 
 目录：`location_message_retrieval/`  
 脚本：`location_message_retrieval/location.py`
@@ -156,7 +156,7 @@ def LocationMessage(chat_title: str) -> Optional[List[str]]:
 
 ```
 
-### 5) 指定群聊发布群公告（新增）
+### 5) 指定群聊发布群公告
 
 目录：`Edit_Group_Announcement_for_the_Specified_Group/`  
 脚本：`Edit_Announcement.py`
@@ -181,6 +181,27 @@ python Edit_Announcement.py
 from Edit_Announcement import post_group_announcement
 post_group_announcement("测试1群", "群公告1测试", need_calibration=False)
 # 第一次可设 need_calibration=True 做一次右上角偏移校准
+```
+### 6) 打开微信主界面的「朋友圈」
+
+目录：`open_moments/`  
+脚本：`open_moments.py`
+
+**能力** 
+- 自动查找“微信”主窗口。如果窗口已最小化或被遮挡，则自动尝试从任务栏图标将其唤醒至前台。  
+- 坐标定位：以主窗口左上角为锚点，结合 DPI 缩放和固定的 (X, Y) 偏移量，精确定位并点击“朋友圈”图标。  
+- 点击后，通过 UIA 查找弹出的“朋友圈”窗口，确保操作成功。
+
+**快速试用**
+```bash
+python open_moments.py
+```
+**在你的工程中使用**
+```python
+from open_moments import open_wechat_moments
+ok = open_wechat_moments()
+if ok:
+    print("成功打开朋友圈！")
 ```
 
 
