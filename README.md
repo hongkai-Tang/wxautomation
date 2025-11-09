@@ -240,6 +240,43 @@ like_moments_by_pagedown(target_like_count: int) -> int
 # :return: int - 实际点赞数量
 ```
 
+### 8) 朋友圈发布图片与文案
+
+目录：`publish_moments/`  
+脚本：`publish_moments.py`
+
+**能力** 
+- 使用 pywinauto和 pyautogui自动化朋友圈发布流程。  
+- 精确定位朋友圈窗口和按钮位置，通过偏移量计算点击坐标。  
+- "慢动作"执行：为确保稳定，每一步操作（移动、点击）都包含 time.sleep延迟。
+- 点击相机按钮 → 等待 2.0 秒 → 选择图片 → 粘贴文案 → 等待 5 秒 → 点击发表按钮。
+- P支持自定义图片路径和发布文案。
+- 
+
+**快速试用**
+```bash
+python post_to_moments.py
+```
+**在你的工程中使用**
+```python
+from post_to_moments import post_moment
+success = post_moment(
+    image_path="C:/Users/Wang/Desktop/个人照片/唐鸿凯.jpg",
+    caption="分享一张个人照片"
+)
+if success:
+    print("朋友圈发布成功！")
+else:
+    print("发布失败，请检查配置。")
+```
+**API**
+```python
+post_moment(image_path: str, caption: str = "") -> bool
+# :param image_path: 要发布的图片的完整路径
+# :param caption: 要发布的文案内容（可选）
+# :return: bool - 成功返回 True，失败返回 False
+```
+
 
 ---
 
